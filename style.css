@@ -174,6 +174,17 @@ h1, h2, h3, p { margin-top: 0; } h1 { font-size: clamp(32px, 4vw, 52px); letter-
 .intro-progress-footer .button { position: relative; z-index: 1; flex: 0 0 auto; }
 .intro-progress-hint { position: relative; z-index: 1; flex: 0 0 auto; padding: 7px 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; font: 10px var(--mono); }
 .question-card.completed { border-color: #42583a; }
+.lesson-visual { display: grid; grid-template-columns: minmax(0,1fr) minmax(230px,340px); gap: clamp(20px,4vw,46px); align-items: center; padding: clamp(22px,4vw,38px); border: 1px solid #4c613e; border-radius: 12px; background: radial-gradient(circle at 88% 22%, rgba(199,232,106,.08), transparent 32%), linear-gradient(125deg,#1d291c,#151c16); }
+.lesson-visual-copy h2 { margin: 3px 0 10px; font-size: clamp(22px,3vw,30px); }
+.lesson-visual-copy > p:not(.eyebrow) { margin: 0 0 18px; color: #d0d8cc; font-size: 13px; }
+.lesson-visual-copy ul { display: grid; gap: 9px; padding: 0; margin: 0; list-style: none; }
+.lesson-visual-copy li { position: relative; padding-left: 20px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.lesson-visual-copy li::before { position: absolute; left: 0; color: var(--lime); content: "✓"; }
+.lesson-visual-board { width: 100%; max-width: 340px; justify-self: center; }
+.lesson-visual-board .go-board { box-shadow: inset 0 0 0 1px rgba(255,225,169,.5), 0 0 0 1px #70451f, 0 9px 18px rgba(0,0,0,.3); }
+.lesson-visual-board .point-label { width: clamp(17px,52%,24px); height: auto; aspect-ratio: 1; font-size: clamp(8px,2vw,10px); }
+.feedback-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.feedback-actions > span { color: var(--dim); font-size: 10px; }
 .lab-board .go-board { width: calc(100% - 18px); }
 .lab-board .board-coordinates.top { width: calc(100% - 18px); max-width: 625px; }
 @media (max-width: 980px) { .topbar { gap: 14px; }.nav-link { padding: 0 7px; font-size: 11px; }.nav-link b { display:none; }.profile-pill > span { display:none; }.welcome-board-card { opacity:.55; }.lesson-shell { grid-template-columns: 215px minmax(0,1fr); }.lesson-sidebar { padding: 26px 13px; }.lesson-side-footer { right:13px; left:13px; }.lab-layout { grid-template-columns: 1fr; }.rule-checklist { display:grid; grid-template-columns: repeat(3,1fr); gap:0 16px; }.rule-checklist h2, .rule-checklist p, .rule-checklist hr { grid-column:1/-1; } }
@@ -233,4 +244,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { font-size: clamp(32px, 4vw, 52px); letter-
   .intro-progress-footer { align-items: stretch; flex-direction: column; padding: 21px; }
   .intro-progress-footer .button { width: 100%; }
   .intro-progress-hint { align-self: flex-start; }
+  .lesson-visual { grid-template-columns: 1fr; padding: 19px; }
+  .lesson-visual-board { max-width: 300px; }
+  .feedback-actions .button { flex: 1 1 auto; }
 }

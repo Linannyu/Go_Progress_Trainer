@@ -239,8 +239,28 @@ function testMasteryAndUnlocks() {
   check(!result.level2Before && result.level2After, "Level 2 should require every Level 1 skill at 40");
 }
 
+function testLessonVisuals() {
+  const context = coreContext();
+  const result = JSON.parse(run(`JSON.stringify((() => {
+    const required=Object.values(skillById).filter(skill=>skill.level<=2).map(skill=>skill.id);
+    return {required,visuals:required.map(id=>{
+      const visual=tutorialVisuals[id];
+      if(!visual)throw new Error("missing lesson visual: "+id);
+      const points=[...visual.stones.map(stone=>stone.slice(0,2)),...visual.highlights];
+      if(points.some(([x,y])=>x<0||y<0||x>=visual.size||y>=visual.size))throw new Error("visual point out of bounds: "+id);
+      return {id,size:visual.size,stones:visual.stones.length,highlights:visual.highlights.length,notes:visual.notes.length};
+    })};
+  })())`, context));
+  check(result.visuals.length === result.required.length, "every Level 0-2 skill needs a visual board explanation");
+  for (const visual of result.visuals) {
+    check([5,9].includes(visual.size), `${visual.id} lesson visual needs a supported teaching-board size`);
+    check(visual.highlights > 0 && visual.notes >= 2, `${visual.id} lesson visual needs highlights and explanation notes`);
+  }
+}
+
 function fakeBrowser(storageMap) {
   const listeners = { click: [], change: [] };
+  const feedback = { innerHTML: "" };
   const app = {
     innerHTML: "",
     addEventListener(type, handler) { (listeners[type] ||= []).push(handler); }
@@ -252,7 +272,7 @@ function fakeBrowser(storageMap) {
   };
   const document = {
     body: { append() {} },
-    querySelector(selector) { return selector === "#app" ? app : null; },
+    querySelector(selector) { if(selector === "#app")return app;if(selector === "#practice-feedback")return feedback;return null; },
     createElement() { return { className:"", textContent:"", remove() {} }; }
   };
   const context = vm.createContext({
@@ -263,7 +283,7 @@ function fakeBrowser(storageMap) {
     clearTimeout: () => {}
   });
   for (const file of scripts) run(source(file), context);
-  return { context, app, listeners };
+  return { context, app, feedback, listeners };
 }
 
 function click(browser, dataset) {
@@ -299,6 +319,7 @@ function testApplicationFlowAndPersistence() {
     click(first, { view });
     check(first.app.innerHTML.includes(marker), `${view} page failed to render`);
     check(!first.app.innerHTML.includes("topbar menu-open"), `${view} navigation must close the mobile menu`);
+    if(view === "learn")check(first.app.innerHTML.includes("lesson-visual-board"), "lesson page must include a visual teaching board");
   }
 
   run(`state.lessonProgress.intro={correctIds:Array.from({length:10},(_,i)=>"intro-check-"+(i+1))};selectedSkill="intro";view="learn";render()`, first.context);
@@ -311,7 +332,13 @@ function testApplicationFlowAndPersistence() {
 
   click(first, { action:"start-session", count:"10" });
   const answer = run("currentQuestion.answer", first.context);
+  const answeredQuestionId = run("currentQuestion.id", first.context);
   click(first, { action:"practice-answer", answer });
+  check(first.feedback.innerHTML.includes('data-action="next-question"'), "answered practice question must provide a next-question button");
+  check(run("currentQuestionResolved", first.context) === true, "correct practice answer must resolve the current question once");
+  click(first, { action:"next-question" });
+  check(run("currentQuestion.id", first.context) !== answeredQuestionId, "next-question button must generate a different question instance");
+  check(run("currentQuestionResolved", first.context) === false, "new question must reset its resolved state");
   click(first, { action:"end-session" });
   check(first.app.innerHTML.includes("LATEST TRAINING SESSION"), "training session must produce a report");
   check(storage.has("go-progress-trainer-v2"), "progress must be written to localStorage");
@@ -330,6 +357,7 @@ function main() {
   testRules();
   testRandomQuestions();
   testMasteryAndUnlocks();
+  testLessonVisuals();
   testApplicationFlowAndPersistence();
   console.log(`PASS — ${checks} assertions, 4,400 generated questions, 9/13/19 board geometry, rules, UI flow and refresh persistence.`);
 }
