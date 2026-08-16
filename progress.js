@@ -31,7 +31,8 @@ function applyPracticeResult(state, question, correct, options = {}) {
     // The same template/position cannot be used to grind a Skill to 100.
     // A position already seen in the recent window earns no mastery, so users
     // cannot fill a Skill by immediately repeating the same question.
-    const gain = lessonMode ? 10 : repeated ? 0 : base + streakBonus;
+    const guidedGain = Math.max(0, Number(options.masteryGain ?? 10));
+    const gain = lessonMode ? guidedGain : repeated ? 0 : base + streakBonus;
     record.masteryScore = Math.min(100, record.masteryScore + gain);
     record.recentSignatures = [...record.recentSignatures, question.signature].slice(-12);
   } else {

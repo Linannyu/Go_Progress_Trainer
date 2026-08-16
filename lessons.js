@@ -72,6 +72,20 @@ const tutorials = {
   chase: { opening: "追击的第一步是识别打吃。现在只练习简单局面：逼对方处理只有一口气的棋。", points: ["先确认真的只剩一气。", "优先练习局部。", "复杂征子会在后面学习。"] }
 };
 
+/** Guided lessons include only distinct operations; optional random practice remains unlimited. */
+const guidedPracticePlans = {
+  liberty: { count: 4, summary: "练习单颗棋、相连棋块、数气和找出所有气。" },
+  group: { count: 3, summary: "分别判断横向连接、纵向连接和斜线接触。" },
+  atari: { count: 1, summary: "找到最后一口气并完成一次提子演示。" },
+  capture: { count: 1, summary: "正确落下一手并提走没有气的棋。" },
+  suicide: { count: 1, summary: "判断一次普通禁入点是否可以落子。" },
+  ko: { count: 1, summary: "理解一次不能立即原位提回的简单劫。" },
+  escape: { count: 1, summary: "完成一次延伸，让被打吃的棋增加气。" },
+  hunt: { count: 1, summary: "找到一次对方棋块的最后一口气。" },
+  "whole-capture": { count: 1, summary: "完成一次整块棋同时被提走的操作。" },
+  chase: { count: 1, summary: "完成一次用打吃迫使对方回应的追击。" }
+};
+
 /** Visual lesson positions stay with course content, separate from UI logic. */
 const tutorialVisuals = {
   intro: { title:"棋子落在交叉点", caption:"黑棋先下，白棋再下。棋子中心始终对准横线与竖线的交叉点。", size:9, stones:[[3,4,"b"],[5,4,"w"]], highlights:[[3,4],[5,4]], labels:{"3,4":"1","5,4":"2"}, notes:["黑棋是第 1 手","白棋是第 2 手","斜线和格子中央都不是落子点"] },

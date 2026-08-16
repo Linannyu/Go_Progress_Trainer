@@ -222,8 +222,8 @@ function testMasteryAndUnlocks() {
     const third = applyPracticeResult(state, q("shape-b"), true);
     const wrong = applyPracticeResult(state, q("shape-c"), false);
     const lessonState = defaultState();
-    const lessonCorrect = applyPracticeResult(lessonState, q("guided-a"), true, {mode:"lesson"});
-    const lessonRepeat = applyPracticeResult(lessonState, q("guided-a"), true, {mode:"lesson"});
+    const lessonCorrect = applyPracticeResult(lessonState, q("guided-a"), true, {mode:"lesson",masteryGain:10});
+    const lessonSingle = applyPracticeResult(lessonState, q("guided-b"), true, {mode:"lesson",masteryGain:40});
     const lessonWrong = applyPracticeResult(lessonState, q("guided-b"), false, {mode:"lesson"});
     const level1Before = levelUnlocked(state, 1);
     masteryRecord(state, "intro").masteryScore = 40;
@@ -236,7 +236,7 @@ function testMasteryAndUnlocks() {
     return {
       firstDelta:first.delta, repeatDelta:repeat.delta, thirdDelta:third.delta,
       wrongDelta:wrong.delta, lessonDelta:lessonCorrect.delta,
-      lessonRepeatDelta:lessonRepeat.delta, lessonWrongDelta:lessonWrong.delta,
+      lessonSingleDelta:lessonSingle.delta, lessonWrongDelta:lessonWrong.delta,
       score:masteryRecord(state,"intro").masteryScore,
       level1Before, level1After, level2Before, level2After
     };
@@ -246,7 +246,7 @@ function testMasteryAndUnlocks() {
   check(result.repeatDelta === 0, "repeating a recent shape must not grind mastery");
   check(result.thirdDelta === 3, "three-correct streak should add its bonus on a new shape");
   check(result.wrongDelta === -1, "wrong answers should reduce mastery by one");
-  check(result.lessonDelta === 10 && result.lessonRepeatDelta === 10, "each correct guided lesson question should gain 10 mastery");
+  check(result.lessonDelta === 10 && result.lessonSingleDelta === 40, "guided mastery gain must adapt to the number of distinct operations");
   check(result.lessonWrongDelta === 0, "guided lesson mistakes should not reduce mastery");
   check(!result.level1Before && result.level1After, "Level 1 should unlock at 40 intro mastery");
   check(!result.level2Before && result.level2After, "Level 2 should require every Level 1 skill at 40");
@@ -256,7 +256,8 @@ function testLessonVisuals() {
   const context = coreContext();
   const result = JSON.parse(run(`JSON.stringify((() => {
     const required=Object.values(skillById).filter(skill=>skill.level<=2).map(skill=>skill.id);
-    return {required,visuals:required.map(id=>{
+    const guided=required.filter(id=>id!=="intro").map(id=>({id,...guidedPracticePlans[id]}));
+    return {required,guided,visuals:required.map(id=>{
       const visual=tutorialVisuals[id];
       if(!visual)throw new Error("missing lesson visual: "+id);
       const points=[...visual.stones.map(stone=>stone.slice(0,2)),...visual.highlights];
@@ -265,6 +266,10 @@ function testLessonVisuals() {
     })};
   })())`, context));
   check(result.visuals.length === result.required.length, "every Level 0-2 skill needs a visual board explanation");
+  check(result.guided.every(plan=>plan.count>=1&&plan.summary), "every guided Level 1-2 skill needs a bounded practice plan");
+  check(result.guided.find(plan=>plan.id==="liberty").count === 4, "Liberty should keep four genuinely different exercises");
+  check(result.guided.find(plan=>plan.id==="group").count === 3, "Group should cover horizontal, vertical and diagonal cases");
+  check(result.guided.filter(plan=>!["liberty","group"].includes(plan.id)).every(plan=>plan.count===1), "single-operation skills must not repeat the same task");
   for (const visual of result.visuals) {
     check([5,9].includes(visual.size), `${visual.id} lesson visual needs a supported teaching-board size`);
     check(visual.highlights > 0 && visual.notes >= 2, `${visual.id} lesson visual needs highlights and explanation notes`);
@@ -343,13 +348,15 @@ function testApplicationFlowAndPersistence() {
   check(run('masteryRecord(state,"intro").masteryScore', first.context) >= 40, "finishing Level 0 must unlock Level 1");
   check(first.app.innerHTML.includes("LEVEL 1 · AVAILABLE"), "Liberty lesson must be available after Level 0 completion");
 
-  check(first.app.innerHTML.includes('data-action="start-lesson-session"'), "skill lesson must start a ten-question checkpoint");
+  check(first.app.innerHTML.includes('data-action="start-lesson-session"'), "skill lesson must start a bounded checkpoint");
   click(first, { action:"start-lesson-session", skill:"liberty" });
   check(run("state.activeSession.type", first.context) === "lesson", "lesson CTA must start guided lesson mode");
-  check(run("state.activeSession.count", first.context) === 10, "guided lesson must contain exactly ten questions");
-  check(first.app.innerHTML.includes("10 题练习"), "guided practice heading must explain the ten-question flow");
-  for (let index = 0; index < 10; index += 1) {
+  check(run("state.activeSession.count", first.context) === 4, "Liberty must contain only four distinct exercises");
+  check(first.app.innerHTML.includes("4 个关键练习"), "guided practice heading must show its real bounded count");
+  const libertySignatures = new Set();
+  for (let index = 0; index < 4; index += 1) {
     const answeredQuestionId = run("currentQuestion.id", first.context);
+    libertySignatures.add(run("currentQuestion.signature", first.context));
     run("grade(currentQuestion,currentQuestion.answer)", first.context);
     check(run("currentQuestionResolved", first.context) === true, `guided question ${index + 1} must resolve after a correct answer`);
     check(run("state.activeSession.completed", first.context) === index + 1, `guided question ${index + 1} must advance progress once`);
@@ -357,28 +364,43 @@ function testApplicationFlowAndPersistence() {
       run("grade(currentQuestion,currentQuestion.answer)", first.context);
       check(run("state.activeSession.completed", first.context) === 1, "double-clicking a solved question must not advance progress twice");
     }
-    if (index < 9) {
+    if (index < 3) {
       click(first, { action:"next-question" });
       check(run("currentQuestion.id", first.context) !== answeredQuestionId, "next-question button must generate a different question instance");
       check(run("currentQuestionResolved", first.context) === false, "new question must reset its resolved state");
     }
   }
-  check(first.feedback.innerHTML.includes("完成并查看结果"), "the tenth question must provide a visible completion action");
-  check(run('masteryRecord(state,"liberty").masteryScore', first.context) === 100, "ten correct guided questions should reach 100 mastery");
+  check(libertySignatures.size === 4, "guided Liberty exercises must not repeat a position");
+  check(first.feedback.innerHTML.includes("完成并查看结果"), "the final distinct exercise must provide a visible completion action");
+  check(run('masteryRecord(state,"liberty").masteryScore', first.context) === 40, "bounded guided practice should establish basic understanding rather than fake mastery");
   click(first, { action:"next-question" });
   check(first.app.innerHTML.includes("SKILL PRACTICE COMPLETE"), "completed guided lesson must show a result card");
-  check(first.app.innerHTML.includes("继续练习 10 题"), "result card must let the learner continue practicing");
+  check(first.app.innerHTML.includes("继续随机练习"), "result card must let the learner opt into more practice");
   check(first.app.innerHTML.includes("下一知识点"), "result card must offer the next learning skill");
   check(run("state.lessonProgress.liberty.practiceCompleted", first.context) === true, "guided lesson completion must be saved");
+
+  click(first, { action:"learn-skill", skill:"atari" });
+  check(first.app.innerHTML.includes("正确完成一次就进入下一节"), "single-operation lessons must clearly require only one success");
+  click(first, { action:"start-lesson-session", skill:"atari" });
+  check(run("state.activeSession.count", first.context) === 1, "Atari must require one key operation only");
+  run('grade(currentQuestion,"not-the-answer")', first.context);
+  check(run("state.activeSession.completed", first.context) === 0, "a wrong attempt must not complete a one-operation lesson");
+  run("grade(currentQuestion,currentQuestion.answer)", first.context);
+  check(run("state.activeSession.completed", first.context) === 1, "one correct Atari operation must complete the lesson");
+  check(run('masteryRecord(state,"atari").masteryScore', first.context) === 40, "one-operation lesson must establish basic understanding");
+  click(first, { action:"next-question" });
+  check(first.app.innerHTML.includes("打吃 Atari · 关键操作已学会"), "one-operation lesson must show a concise completion report");
+  check(run("state.lessonProgress.atari.practiceCompleted", first.context) === true, "single-operation completion must be saved");
   check(storage.has("go-progress-trainer-v2"), "progress must be written to localStorage");
 
   const second = fakeBrowser(storage);
   check(second.app.innerHTML.includes("围棋会一直陪你进步"), "refresh must resume at dashboard");
   check(run("state.profile.hasStarted", second.context) === true, "started state must survive refresh");
-  check(run("totalQuestions(state)", second.context) === 10, "question history must survive refresh");
-  check(run("state.trainingSessions.length", second.context) === 1, "session report must survive refresh");
+  check(run("totalQuestions(state)", second.context) === 6, "question history must survive refresh");
+  check(run("state.trainingSessions.length", second.context) === 2, "session reports must survive refresh");
   check(run("state.lessonProgress.intro.completed", second.context) === true, "Level 0 completion must survive refresh");
   check(run("state.lessonProgress.liberty.practiceCompleted", second.context) === true, "guided skill completion must survive refresh");
+  check(run("state.lessonProgress.atari.practiceCompleted", second.context) === true, "single-operation completion must survive refresh");
 }
 
 function main() {
