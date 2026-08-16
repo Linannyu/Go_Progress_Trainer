@@ -43,20 +43,61 @@ function applyPracticeResult(state, question, correct, options = {}) {
   return { before: oldScore, after: record.masteryScore, delta: record.masteryScore - oldScore, label: masteryLabel(record.masteryScore) };
 }
 
-function levelUnlocked(state, level) {
-  return levelAccess(state, level) !== "locked";
+/**
+ * Course progress and practice mastery are deliberately independent:
+ * - lessonProgress decides what can be learned next.
+ * - skillMastery only decides what should be practised or reviewed.
+ * Keep these helpers free of masteryRecord() calls so a 1% or 100% score can
+ * never change course access.
+ */
+function isLessonCompleted(state, skillId) {
+  const lesson = state.lessonProgress?.[skillId];
+  return Boolean(lesson?.completed || lesson?.practiceCompleted);
+}
+
+function requiredLevelSkills(level) {
+  return Object.values(skillById).filter(skill => skill.level === level && skill.practiceable);
+}
+
+function isLevelCompleted(state, level) {
+  const required = requiredLevelSkills(level);
+  return required.length > 0 && required.every(skill => isLessonCompleted(state, skill.id));
+}
+
+function canAccessLevel(state, level) {
+  if (state.settings.unlockAllLevels || level === 0) return true;
+  return isLevelCompleted(state, level - 1);
 }
 
 function levelAccess(state, level) {
-  if (state.settings.unlockAllLevels || level === 0) return "available";
-  const previous = level - 1;
-  const prevSkills = Object.values(skillById).filter(skill => skill.level === previous);
-  if (!prevSkills.length) return "locked";
-  const average = prevSkills.reduce((sum, skill) => sum + masteryRecord(state, skill.id).masteryScore, 0) / prevSkills.length;
-  const lessonsComplete = prevSkills.every(skill => state.lessonProgress[skill.id]?.practiceCompleted || state.lessonProgress[skill.id]?.completed);
-  if (average >= 60) return "available";
-  if (average >= 40 || lessonsComplete) return "preview";
-  return "locked";
+  return canAccessLevel(state, level) ? "available" : "locked";
+}
+
+function levelUnlocked(state, level) {
+  return canAccessLevel(state, level);
+}
+
+function canAccessSkill(state, skillId) {
+  const skill = skillById[skillId];
+  if (!skill) return false;
+  if (state.settings.unlockAllLevels || isLessonCompleted(state, skillId)) return true;
+  if (!canAccessLevel(state, skill.level)) return false;
+  // Future placeholder lessons are visible as soon as their Level is reached.
+  if (!skill.practiceable) return true;
+  const sequence = requiredLevelSkills(skill.level);
+  const index = sequence.findIndex(item => item.id === skillId);
+  return index >= 0 && sequence.slice(0, index).every(item => isLessonCompleted(state, item.id));
+}
+
+function nextLesson(state) {
+  return Object.values(skillById).find(skill => skill.practiceable && canAccessSkill(state, skill.id) && !isLessonCompleted(state, skill.id)) || null;
+}
+
+function lessonStats(state) {
+  const implemented = Object.values(skillById).filter(skill => skill.practiceable);
+  const completed = implemented.filter(skill => isLessonCompleted(state, skill.id)).length;
+  const available = implemented.filter(skill => !isLessonCompleted(state, skill.id) && canAccessSkill(state, skill.id)).length;
+  return { completed, available, notStarted: implemented.length - completed - available, total: implemented.length };
 }
 
 function localDayDistance(fromKey, toKey = getLocalDateKey()) {
@@ -66,8 +107,9 @@ function localDayDistance(fromKey, toKey = getLocalDateKey()) {
 }
 
 function recommendedSkill(state) {
-  const unlocked = Object.values(skillById).filter(skill => levelUnlocked(state, skill.level));
-  const candidates = unlocked.filter(skill => skill.practiceable);
+  const implemented = Object.values(skillById).filter(skill => skill.practiceable);
+  const learned = implemented.filter(skill => isLessonCompleted(state, skill.id));
+  const candidates = learned.length ? learned : implemented.filter(skill => canAccessSkill(state, skill.id));
   const overdue = candidates.map(skill => {
     const record = masteryRecord(state, skill.id);
     const days = localDayDistance(record.lastPracticedDate || (record.lastPracticed ? getLocalDateKey(record.lastPracticed) : null));
@@ -82,7 +124,9 @@ function recommendedSkill(state) {
 
 /** Adaptive mix: 50% weakest, 30% most recently learned, 20% review. */
 function adaptiveSkill(state, random = Math.random) {
-  const candidates = Object.values(skillById).filter(skill => skill.practiceable && levelUnlocked(state, skill.level));
+  const implemented = Object.values(skillById).filter(skill => skill.practiceable);
+  const learned = implemented.filter(skill => isLessonCompleted(state, skill.id));
+  const candidates = learned.length ? learned : implemented.filter(skill => canAccessSkill(state, skill.id));
   if (!candidates.length) return skillById.intro;
   const byWeakness = [...candidates].sort((a, b) => masteryRecord(state, a.id).masteryScore - masteryRecord(state, b.id).masteryScore);
   const practiced = [...candidates].filter(skill => masteryRecord(state, skill.id).lastPracticed).sort((a, b) => new Date(masteryRecord(state, b.id).lastPracticed) - new Date(masteryRecord(state, a.id).lastPracticed));

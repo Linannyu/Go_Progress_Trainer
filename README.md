@@ -12,14 +12,15 @@
 - 响应式深色界面，适合桌面和手机浏览器。
 - 16 个长期 Level 学习路径，后续没有“毕业”限制，可继续增加 Level。
 - Level 0 完整教学与 10 道可即时判定的入门互动题。
-- 教学完成（Lesson Completed）与长期熟练度（Mastery）分开；关键教学只建立约 20% 初始理解，更多熟练度来自变化棋形中的长期练习。
+- 教学完成（Course Progress）与长期熟练度（Mastery）完全分开：只要完成一课的讲解与必要互动就解锁下一课；Mastery 无论是 1% 还是 100% 都不会阻止或提前解锁课程。
 - Level 1–2 的完整入门内容：气（Liberty）、一块棋（Group）、打吃（Atari）、提子（Capture）、逃跑与延伸、发现吃子、整块提子、基础追击。
 - 真正的随机题目生成：Easy / Medium / Hard 数气、找所有气、Group 判断、找打吃、一步提子，以及 A–H 八类逃跑。答案由规则引擎即时计算。
 - 多手 `TacticalSequence` 追击：用户连续找打吃，对方自动选择合法逃跑；同一结构为以后征子（Ladder）与枷（Net）预留。
 - 真实 Ko 棋盘训练：提子、立即提回被规则阻止、先下劫材并回应后合法提劫。
 - `rules.js` 围棋规则引擎：棋块、气、提子、普通自杀、简单劫、合法落子检查。
 - 可自由落子的 9×9 / 13×13 / 19×19 实战棋盘；Pass、提子数、手数、Ko、Undo / Redo 使用完整状态历史，并支持基础 SGF 导出。
-- 每个 Skill 独立熟练度（0–100）、连对奖励、重复题防刷分、自动解锁、间隔复习优先级与推荐下一步。
+- 每个 Skill 独立熟练度（0–100）、连对奖励、重复题防刷分、间隔复习优先级与自适应练习推荐；课程解锁只读取 `lessonProgress`。
+- Dashboard 将“继续学习”与“推荐练习”分开：前者指向第一门未完成课程，后者根据 Mastery、错题与间隔复习选择薄弱知识点。
 - 训练 Session：Focused / Mixed / Adaptive / Mistakes，支持 10 / 20 / 50 / 无限题；报告包含有效用时、Mastery 变化、强弱项、常见错误与推荐。
 - 错题本按 Skill、questionType、errorType、difficulty 聚合；连续答对 3 次显示 `Mastered Mistake`。
 - 本地日期统一使用用户时区；Active Study Timer 会在后台立即暂停、闲置 3 分钟后自动停止，避免挂机时长虚高。
@@ -54,7 +55,7 @@ rules.js       纯围棋规则引擎
 board.js       可触摸的 DOM 围棋棋盘组件
 practice.js    随机题目模板与局面生成
 tactics.js     多手追击与真实 Ko 训练状态机
-progress.js    熟练度、解锁和推荐算法
+progress.js    独立的课程访问、熟练度与推荐算法
 storage.js     localStorage 状态持久化
 tests/         无需安装依赖的规则、随机题、布局和应用流程回归测试
 ```
@@ -71,7 +72,7 @@ tests/         无需安装依赖的规则、随机题、布局和应用流程�
 node tests/smoke-test.cjs
 ```
 
-测试会检查本地日期与主动计时、Pass / Capture 的 Undo / Redo、Ko、SGF、Escape A–H、Chase，以及 12,000+ 个动态生成局面。建议连续运行多轮以排除随机种子侥幸通过。
+测试会检查 Course Progress / Mastery 完全独立、本地日期与主动计时、Pass / Capture 的 Undo / Redo、Ko、SGF、Escape A–H、Chase，以及 12,000+ 个动态生成局面。建议连续运行多轮以排除随机种子侥幸通过。
 
 ## GitHub Pages 部署
 

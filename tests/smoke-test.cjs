@@ -99,22 +99,39 @@ function testTacticalSequences(){
   assert.deepEqual(result.ko,{stages:[true,true,true,true],stage:4});checks+=5;
 }
 
-function testMasteryAccessAdaptive(){
+function testCourseProgressAndMasteryIndependence(){
   const context=coreContext();
   const result=JSON.parse(run(`JSON.stringify((()=>{
-    const state=defaultState(),q={skill:"liberty",difficulty:"easy",signature:"one"};
-    const lesson=applyPracticeResult(state,q,true,{mode:"lesson",masteryGain:20});
-    state.lessonProgress.intro={completed:true};masteryRecord(state,"intro").masteryScore=20;
-    const accessPreview=levelAccess(state,1);
-    masteryRecord(state,"intro").masteryScore=60;const accessAvailable=levelAccess(state,1);
-    const adaptiveState=defaultState();adaptiveState.settings.unlockAllLevels=true;Object.values(skillById).filter(skill=>skill.practiceable).forEach(skill=>masteryRecord(adaptiveState,skill.id).masteryScore=80);masteryRecord(adaptiveState,"escape").masteryScore=5;masteryRecord(adaptiveState,"capture").masteryScore=50;masteryRecord(adaptiveState,"liberty").masteryScore=95;masteryRecord(adaptiveState,"capture").lastPracticed=new Date().toISOString();masteryRecord(adaptiveState,"capture").lastPracticedDate=getLocalDateKey();
-    return {lesson,accessPreview,accessAvailable,weak:adaptiveSkill(adaptiveState,()=>.1).id,recent:adaptiveSkill(adaptiveState,()=>.6).id,review:adaptiveSkill(adaptiveState,()=>.9).id,defaultCall:adaptiveSkill(adaptiveState).id};
+    const q={skill:"liberty",difficulty:"easy",signature:"one"},guided=defaultState(),lesson=applyPracticeResult(guided,q,true,{mode:"lesson",masteryGain:20});
+    const level1Ids=requiredLevelSkills(1).map(skill=>skill.id);
+
+    // 1. Low mastery cannot block a completed Level.
+    const completedLevel=defaultState();completedLevel.lessonProgress.intro={completed:true};
+    level1Ids.forEach((id,index)=>{completedLevel.lessonProgress[id]={practiceCompleted:true};masteryRecord(completedLevel,id).masteryScore=[5,10,15,20][index%4];});
+
+    // 2. 100% mastery cannot complete or unlock a course.
+    const masteryOnly=defaultState();masteryOnly.lessonProgress.intro={completed:true};
+    level1Ids.forEach(id=>masteryRecord(masteryOnly,id).masteryScore=100);
+
+    // 3. A completed low-mastery Skill unlocks the next Skill.
+    const lowMastery=defaultState();lowMastery.lessonProgress.intro={completed:true};lowMastery.lessonProgress.liberty={practiceCompleted:true};masteryRecord(lowMastery,"liberty").masteryScore=1;
+
+    // 4. Continue Learning follows lesson order, not the weakest completed Skill.
+    const continuation=defaultState();["intro","liberty","group"].forEach(id=>continuation.lessonProgress[id]={practiceCompleted:true});masteryRecord(continuation,"intro").masteryScore=80;masteryRecord(continuation,"liberty").masteryScore=90;masteryRecord(continuation,"group").masteryScore=1;
+
+    // 5. Adaptive Practice still follows mastery among learned Skills.
+    const adaptiveState=defaultState();["intro","liberty","group","atari","capture","escape"].forEach(id=>adaptiveState.lessonProgress[id]={practiceCompleted:true});Object.values(skillById).filter(skill=>skill.practiceable).forEach(skill=>masteryRecord(adaptiveState,skill.id).masteryScore=80);masteryRecord(adaptiveState,"escape").masteryScore=5;masteryRecord(adaptiveState,"capture").masteryScore=50;masteryRecord(adaptiveState,"liberty").masteryScore=95;masteryRecord(adaptiveState,"capture").lastPracticed=new Date().toISOString();masteryRecord(adaptiveState,"capture").lastPracticedDate=getLocalDateKey();
+    return {lesson,completedLevel:{done:isLevelCompleted(completedLevel,1),level2:levelAccess(completedLevel,2)},masteryOnly:{done:isLevelCompleted(masteryOnly,1),level2:levelAccess(masteryOnly,2)},lowMastery:{next:canAccessSkill(lowMastery,"group"),level1:levelAccess(lowMastery,1)},continuation:{next:nextLesson(continuation)?.id,recommended:recommendedSkill(continuation).skill.id},adaptive:{weak:adaptiveSkill(adaptiveState,()=>.1).id,recent:adaptiveSkill(adaptiveState,()=>.6).id,review:adaptiveSkill(adaptiveState,()=>.9).id,defaultCall:adaptiveSkill(adaptiveState).id}};
   })())`,context));
   check(result.lesson.after===20,"one guided operation should introduce a skill, not grant 40% mastery");
-  check(result.accessPreview==="preview"&&result.accessAvailable==="available","level access needs Preview at lesson completion and Available at 60+");
-  check(result.weak==="escape"&&result.recent==="capture","adaptive mix should prioritize weakest and recent skills");
-  check(result.review,"adaptive review branch must always return a skill");
-  check(result.defaultCall,"adaptive default RNG must remain callable in the browser");
+  assert.deepEqual(result.completedLevel,{done:true,level2:"available"});checks+=2;
+  assert.deepEqual(result.masteryOnly,{done:false,level2:"locked"});checks+=2;
+  assert.deepEqual(result.lowMastery,{next:true,level1:"available"});checks+=2;
+  assert.deepEqual(result.continuation,{next:"atari",recommended:"group"});checks+=2;
+  check(result.adaptive.weak==="escape"&&result.adaptive.recent==="capture","adaptive mix should still prioritize mastery weakness and recent practice");
+  check(result.adaptive.review,"adaptive review branch must always return a learned skill");
+  check(result.adaptive.defaultCall,"adaptive default RNG must remain callable in the browser");
+  check(!/function canAccessLevel\([^}]+masteryRecord\(/.test(source("progress.js"))&&!/function canAccessSkill\([^}]+masteryRecord\(/.test(source("progress.js")),"course access helpers must never read mastery");
 }
 
 function fakeBrowser(storageMap){
@@ -129,9 +146,9 @@ function click(browser,dataset){const target={dataset,disabled:false,closest(){r
 function testApplicationFlow(){
   const storage=new Map(),browser=fakeBrowser(storage);
   check(browser.app.innerHTML.includes("欢迎开始学习围棋"),"welcome screen must render");
-  click(browser,{action:"start"});check(browser.app.innerHTML.includes("今日学习时间"),"dashboard needs today's active time");
+  click(browser,{action:"start"});check(browser.app.innerHTML.includes("今日学习时间")&&browser.app.innerHTML.includes("CONTINUE LEARNING")&&browser.app.innerHTML.includes("RECOMMENDED PRACTICE"),"dashboard needs separate course and practice targets");
   run('state.lessonProgress.intro={completed:true};masteryRecord(state,"intro").masteryScore=20;save()',browser.context);
-  click(browser,{view:"path"});check(browser.app.innerHTML.includes("Preview"),"Learning Path needs soft access states");
+  click(browser,{view:"path"});check(browser.app.innerHTML.includes("LEVEL 1")&&browser.app.innerHTML.includes("▶ Available")&&!browser.app.innerHTML.includes("Preview"),"Learning Path access must use lesson completion only");
   click(browser,{view:"practice"});check(browser.app.innerHTML.includes("Adaptive")&&browser.app.innerHTML.includes("Hard"),"practice page needs adaptive mode and difficulty controls");
   click(browser,{view:"play"});check(browser.app.innerHTML.includes("Move 0")&&browser.app.innerHTML.includes("Export SGF")&&browser.app.innerHTML.includes("Scoring system coming later"),"Play UI needs full-state indicators and honest scoring notice");
   click(browser,{view:"ai"});check(browser.app.innerHTML.includes("NOT REAL KATAGO"),"AI review must be clearly marked as demo");
@@ -142,7 +159,7 @@ function main(){
   testSyntaxAndLoading();testLocalDatesAndActiveTimer();testRulesKoAndHistory();
   // Three full rounds catch generator regressions that a lucky seed can hide.
   for(let round=0;round<3;round++)testDynamicQuestions();
-  testTacticalSequences();testMasteryAccessAdaptive();testApplicationFlow();
-  console.log(`PASS — ${checks} assertions, ${generated.toLocaleString()} generated/played positions, local dates, active timer, full history, Escape A-H, Chase, Ko, UI and persistence.`);
+  testTacticalSequences();testCourseProgressAndMasteryIndependence();testApplicationFlow();
+  console.log(`PASS — ${checks} assertions, ${generated.toLocaleString()} generated/played positions, independent Course Progress/Mastery, local dates, active timer, full history, Escape A-H, Chase, Ko, UI and persistence.`);
 }
 main();
