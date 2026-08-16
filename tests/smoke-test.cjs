@@ -283,6 +283,9 @@ function testApplicationFlowAndPersistence() {
 
   click(first, { action:"start" });
   check(first.app.innerHTML.includes("围棋会一直陪你进步"), "Start must open the dashboard");
+  click(first, { action:"toggle-nav" });
+  check(first.app.innerHTML.includes("topbar menu-open"), "mobile navigation button must expand the menu");
+  check(first.app.innerHTML.includes('aria-expanded="true"'), "expanded mobile menu must expose its accessible state");
 
   const pages = [
     ["path", "学习路径"], ["learn", "认识围棋"], ["practice", "随机练习"],
@@ -292,6 +295,7 @@ function testApplicationFlowAndPersistence() {
   for (const [view, marker] of pages) {
     click(first, { view });
     check(first.app.innerHTML.includes(marker), `${view} page failed to render`);
+    check(!first.app.innerHTML.includes("topbar menu-open"), `${view} navigation must close the mobile menu`);
   }
 
   click(first, { action:"start-session", count:"10" });
