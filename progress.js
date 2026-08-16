@@ -6,7 +6,7 @@ const masteryLabels = [
 function masteryRecord(state, skillId) {
   if (!state.skillMastery[skillId]) state.skillMastery[skillId] = {
     masteryScore: 0, correctStreak: 0, wrongCount: 0, attempts: 0, correct: 0,
-    lastPracticed: null, recentSignatures: []
+    lastPracticed: null, lastPracticedDate: null, recentSignatures: []
   };
   return state.skillMastery[skillId];
 }
@@ -17,16 +17,17 @@ function skillAccuracy(state, skillId) {
   return record.attempts ? Math.round(record.correct / record.attempts * 100) : 0;
 }
 
-/** Update mastery from a real question. Guided lesson questions are worth 10%. */
+/** Update mastery. Lesson completion and long-term mastery remain separate. */
 function applyPracticeResult(state, question, correct, options = {}) {
   const record = masteryRecord(state, question.skill);
   const oldScore = record.masteryScore;
   const lessonMode = options.mode === "lesson";
-  record.attempts += 1; record.lastPracticed = new Date().toISOString();
+  const practicedAt = new Date();
+  record.attempts += 1; record.lastPracticed = practicedAt.toISOString(); record.lastPracticedDate = getLocalDateKey(practicedAt);
   const repeated = record.recentSignatures.includes(question.signature);
   if (correct) {
     record.correct += 1; record.correctStreak += 1;
-    const base = question.difficulty === "challenge" ? 5 : question.difficulty === "normal" ? 3 : 2;
+    const base = ["hard", "challenge"].includes(question.difficulty) ? 5 : ["medium", "normal"].includes(question.difficulty) ? 3 : 2;
     const streakBonus = record.correctStreak >= 3 ? 1 : 0;
     // The same template/position cannot be used to grind a Skill to 100.
     // A position already seen in the recent window earns no mastery, so users
@@ -43,10 +44,25 @@ function applyPracticeResult(state, question, correct, options = {}) {
 }
 
 function levelUnlocked(state, level) {
-  if (state.settings.unlockAllLevels || level === 0) return true;
+  return levelAccess(state, level) !== "locked";
+}
+
+function levelAccess(state, level) {
+  if (state.settings.unlockAllLevels || level === 0) return "available";
   const previous = level - 1;
   const prevSkills = Object.values(skillById).filter(skill => skill.level === previous);
-  return prevSkills.length > 0 && prevSkills.every(skill => masteryRecord(state, skill.id).masteryScore >= 40);
+  if (!prevSkills.length) return "locked";
+  const average = prevSkills.reduce((sum, skill) => sum + masteryRecord(state, skill.id).masteryScore, 0) / prevSkills.length;
+  const lessonsComplete = prevSkills.every(skill => state.lessonProgress[skill.id]?.practiceCompleted || state.lessonProgress[skill.id]?.completed);
+  if (average >= 60) return "available";
+  if (average >= 40 || lessonsComplete) return "preview";
+  return "locked";
+}
+
+function localDayDistance(fromKey, toKey = getLocalDateKey()) {
+  if (!fromKey) return 99;
+  const asNoon = key => { const [year, month, day] = key.split("-").map(Number); return new Date(year, month - 1, day, 12).getTime(); };
+  return Math.max(0, Math.round((asNoon(toKey) - asNoon(fromKey)) / 86400000));
 }
 
 function recommendedSkill(state) {
@@ -54,7 +70,7 @@ function recommendedSkill(state) {
   const candidates = unlocked.filter(skill => skill.practiceable);
   const overdue = candidates.map(skill => {
     const record = masteryRecord(state, skill.id);
-    const days = record.lastPracticed ? (Date.now() - new Date(record.lastPracticed).getTime()) / 86400000 : 99;
+    const days = localDayDistance(record.lastPracticedDate || (record.lastPracticed ? getLocalDateKey(record.lastPracticed) : null));
     let priority = 100 - record.masteryScore;
     if (days >= 7) priority += 28;
     if (record.attempts && skillAccuracy(state, skill.id) < 60) priority += 18;
@@ -62,6 +78,25 @@ function recommendedSkill(state) {
     return { skill, priority, days };
   });
   return overdue.sort((a, b) => b.priority - a.priority)[0] || { skill: skillById.intro, priority: 0, days: 0 };
+}
+
+/** Adaptive mix: 50% weakest, 30% most recently learned, 20% review. */
+function adaptiveSkill(state, random = Math.random) {
+  const candidates = Object.values(skillById).filter(skill => skill.practiceable && levelUnlocked(state, skill.level));
+  if (!candidates.length) return skillById.intro;
+  const byWeakness = [...candidates].sort((a, b) => masteryRecord(state, a.id).masteryScore - masteryRecord(state, b.id).masteryScore);
+  const practiced = [...candidates].filter(skill => masteryRecord(state, skill.id).lastPracticed).sort((a, b) => new Date(masteryRecord(state, b.id).lastPracticed) - new Date(masteryRecord(state, a.id).lastPracticed));
+  const review = [...candidates].sort((a, b) => localDayDistance(masteryRecord(state, b.id).lastPracticedDate) - localDayDistance(masteryRecord(state, a.id).lastPracticedDate));
+  const roll = random();
+  if (roll < .5) return byWeakness[0];
+  if (roll < .8) return practiced[0] || byWeakness[0];
+  return review[0] || byWeakness[0];
+}
+
+function commonErrorType(state) {
+  const counts = {};
+  Object.values(state.mistakes || {}).forEach(mistake => { const type = mistake.errorType || "needs-review"; counts[type] = (counts[type] || 0) + (mistake.wrongCount || 1); });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 }
 
 function totalQuestions(state) { return Object.values(state.questionHistory).reduce((sum, q) => sum + q.attempts, 0); }

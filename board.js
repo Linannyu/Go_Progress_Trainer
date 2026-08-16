@@ -11,7 +11,49 @@ function starPointKeys(size) {
 /** DOM Go board: real buttons make it work with touch, keyboard and mouse. */
 class GoBoard {
   constructor(container, options = {}) { this.container = container; this.setPosition(options); }
-  setPosition(options = {}) { this.size = options.size || this.size || 9; this.board = createBoard(this.size, options.stones || []); this.previousBoard = null; this.toPlay = options.toPlay || "b"; this.lastMove = null; this.history = []; this.future = []; this.locked = !!options.locked; this.highlights = options.highlights || []; this.labels = options.labels || {}; this.onMove = options.onMove || (() => {}); this.draw(); }
+  setPosition(options = {}) {
+    this.size = options.size || this.size || 9;
+    this.board = options.board ? cloneBoard(options.board) : createBoard(this.size, options.stones || []);
+    this.previousBoard = options.previousBoard ? cloneBoard(options.previousBoard) : null;
+    this.toPlay = options.toPlay || "b";
+    this.lastMove = options.lastMove || null;
+    this.captures = { b: 0, w: 0, ...(options.captures || {}) };
+    this.moveNumber = options.moveNumber || 0;
+    this.passCount = options.passCount || 0;
+    this.gameOver = !!options.gameOver;
+    this.moveHistory = (options.moveHistory || []).map(move => ({ ...move }));
+    this.history = [];
+    this.future = [];
+    this.locked = !!options.locked;
+    this.highlights = options.highlights || [];
+    this.labels = options.labels || {};
+    this.onMove = options.onMove || this.onMove || (() => {});
+    this.draw();
+  }
+  snapshot() {
+    return {
+      board: cloneBoard(this.board),
+      previousBoard: this.previousBoard && cloneBoard(this.previousBoard),
+      toPlay: this.toPlay,
+      lastMove: this.lastMove && [...this.lastMove],
+      captures: { ...this.captures },
+      moveNumber: this.moveNumber,
+      passCount: this.passCount,
+      gameOver: this.gameOver,
+      moveHistory: this.moveHistory.map(move => ({ ...move }))
+    };
+  }
+  restore(snapshot) {
+    this.board = cloneBoard(snapshot.board);
+    this.previousBoard = snapshot.previousBoard && cloneBoard(snapshot.previousBoard);
+    this.toPlay = snapshot.toPlay;
+    this.lastMove = snapshot.lastMove && [...snapshot.lastMove];
+    this.captures = { ...snapshot.captures };
+    this.moveNumber = snapshot.moveNumber;
+    this.passCount = snapshot.passCount;
+    this.gameOver = snapshot.gameOver;
+    this.moveHistory = snapshot.moveHistory.map(move => ({ ...move }));
+  }
   draw() {
     const letters = "ABCDEFGHJKLMNOPQRST".slice(0, this.size).split("");
     const stars = starPointKeys(this.size);
@@ -33,7 +75,24 @@ class GoBoard {
       grid.append(point);
     }
   }
-  handleClick(x, y) { if (this.locked) return; const result = playMove(this.board, x, y, this.toPlay, this.previousBoard); if (!result.legal) return this.onMove({ legal: false, x, y }); this.history.push({ board: cloneBoard(this.board), previousBoard: this.previousBoard && cloneBoard(this.previousBoard), toPlay: this.toPlay, lastMove: this.lastMove }); this.previousBoard = cloneBoard(this.board); this.board = result.board; this.lastMove = [x, y]; this.toPlay = otherColor(this.toPlay); this.future = []; this.draw(); this.onMove({ legal: true, x, y, captured: result.captured, board: this.board }); }
+  handleClick(x, y) {
+    if (this.locked || this.gameOver) return;
+    const player = this.toPlay;
+    const result = playMove(this.board, x, y, player, this.previousBoard);
+    if (!result.legal) return this.onMove({ legal: false, x, y, state: this.snapshot() });
+    this.history.push(this.snapshot());
+    this.previousBoard = cloneBoard(this.board);
+    this.board = result.board;
+    this.lastMove = [x, y];
+    this.captures[player] += result.captured.length;
+    this.moveNumber += 1;
+    this.passCount = 0;
+    this.moveHistory.push({ player: player.toUpperCase(), x, y });
+    this.toPlay = otherColor(player);
+    this.future = [];
+    this.draw();
+    this.onMove({ legal: true, type: "move", player, x, y, captured: result.captured, board: this.board, state: this.snapshot() });
+  }
   animateMove(x, y, color = this.toPlay, delay = 430) {
     const result = playMove(this.board, x, y, color, this.previousBoard);
     if (!result.legal) return result;
@@ -51,8 +110,29 @@ class GoBoard {
     }, result.captured.length ? delay : 180);
     return result;
   }
-  undo() { const old = this.history.pop(); if (!old) return; this.future.push({ board: cloneBoard(this.board), previousBoard: this.previousBoard && cloneBoard(this.previousBoard), toPlay: this.toPlay, lastMove: this.lastMove }); Object.assign(this, old); this.draw(); }
-  redo() { const next = this.future.pop(); if (!next) return; this.history.push({ board: cloneBoard(this.board), previousBoard: this.previousBoard && cloneBoard(this.previousBoard), toPlay: this.toPlay, lastMove: this.lastMove }); Object.assign(this, next); this.draw(); }
+  undo() { const old = this.history.pop(); if (!old) return false; this.future.push(this.snapshot()); this.restore(old); this.draw(); this.onMove({ legal: true, type: "undo", state: this.snapshot() }); return true; }
+  redo() { const next = this.future.pop(); if (!next) return false; this.history.push(this.snapshot()); this.restore(next); this.draw(); this.onMove({ legal: true, type: "redo", state: this.snapshot() }); return true; }
   clear() { this.setPosition({ size: this.size, toPlay: "b", onMove: this.onMove }); }
-  pass() { this.previousBoard = cloneBoard(this.board); this.toPlay = otherColor(this.toPlay); this.lastMove = null; this.draw(); this.onMove({ legal: true, pass: true, captured: [], board: this.board }); }
+  pass() {
+    if (this.locked || this.gameOver) return false;
+    const player = this.toPlay;
+    this.history.push(this.snapshot());
+    this.previousBoard = cloneBoard(this.board);
+    this.toPlay = otherColor(player);
+    this.lastMove = null;
+    this.moveNumber += 1;
+    this.passCount += 1;
+    this.gameOver = this.passCount >= 2;
+    this.moveHistory.push({ player: player.toUpperCase(), pass: true });
+    this.future = [];
+    this.draw();
+    this.onMove({ legal: true, type: "pass", pass: true, player, captured: [], board: this.board, state: this.snapshot() });
+    return true;
+  }
+}
+
+function exportSGF(size, moves = []) {
+  const coordinate = value => String.fromCharCode(97 + value);
+  const nodes = moves.map(move => `;${move.player || "B"}[${move.pass ? "" : `${coordinate(move.x)}${coordinate(move.y)}`}]`).join("");
+  return `(;GM[1]FF[4]CA[UTF-8]AP[Go Progress Trainer]SZ[${size}]${nodes})`;
 }
