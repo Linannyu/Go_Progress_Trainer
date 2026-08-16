@@ -283,6 +283,9 @@ function testApplicationFlowAndPersistence() {
 
   click(first, { action:"start" });
   check(first.app.innerHTML.includes("围棋会一直陪你进步"), "Start must open the dashboard");
+  const answerPositions = JSON.parse(run(`JSON.stringify(tutorials.intro.questions.map((question,index)=>balancedOptions(question[1],index).indexOf(question[2])))`, first.context));
+  const positionCounts = [0,1,2].map(position => answerPositions.filter(value => value === position).length);
+  check(positionCounts.every(count => count >= 3), "Level 0 correct answers must be balanced across all three option positions");
   click(first, { action:"toggle-nav" });
   check(first.app.innerHTML.includes("topbar menu-open"), "mobile navigation button must expand the menu");
   check(first.app.innerHTML.includes('aria-expanded="true"'), "expanded mobile menu must expose its accessible state");
@@ -298,6 +301,14 @@ function testApplicationFlowAndPersistence() {
     check(!first.app.innerHTML.includes("topbar menu-open"), `${view} navigation must close the mobile menu`);
   }
 
+  run(`state.lessonProgress.intro={correctIds:Array.from({length:10},(_,i)=>"intro-check-"+(i+1))};selectedSkill="intro";view="learn";render()`, first.context);
+  check(first.app.innerHTML.includes("10/10 已完成"), "Level 0 must show a visible completion state after all ten answers");
+  check(first.app.innerHTML.includes('data-action="continue-intro"'), "Level 0 must provide a continue button");
+  click(first, { action:"continue-intro" });
+  check(run("selectedSkill", first.context) === "liberty", "continue button must open the Liberty skill");
+  check(run('masteryRecord(state,"intro").masteryScore', first.context) >= 40, "finishing Level 0 must unlock Level 1");
+  check(first.app.innerHTML.includes("LEVEL 1 · AVAILABLE"), "Liberty lesson must be available after Level 0 completion");
+
   click(first, { action:"start-session", count:"10" });
   const answer = run("currentQuestion.answer", first.context);
   click(first, { action:"practice-answer", answer });
@@ -310,6 +321,7 @@ function testApplicationFlowAndPersistence() {
   check(run("state.profile.hasStarted", second.context) === true, "started state must survive refresh");
   check(run("totalQuestions(state)", second.context) === 1, "question history must survive refresh");
   check(run("state.trainingSessions.length", second.context) === 1, "session report must survive refresh");
+  check(run("state.lessonProgress.intro.completed", second.context) === true, "Level 0 completion must survive refresh");
 }
 
 function main() {

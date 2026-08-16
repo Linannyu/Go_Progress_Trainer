@@ -166,6 +166,14 @@ h1, h2, h3, p { margin-top: 0; } h1 { font-size: clamp(32px, 4vw, 52px); letter-
     0 6px 9px rgba(43, 23, 7, .2);
 }
 .stone.w::before { opacity: .88; }
+.intro-progress-footer { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 25px 27px; margin-top: 8px; overflow: hidden; border: 1px solid #657d47; border-left: 4px solid var(--lime); border-radius: 11px; background: linear-gradient(120deg, #22301f, #182019); }
+.intro-progress-footer::after { position: absolute; right: -28px; bottom: -62px; width: 150px; height: 150px; border: 1px solid rgba(199,232,106,.1); border-radius: 50%; content: ""; }
+.intro-progress-footer > div { position: relative; z-index: 1; }
+.intro-progress-footer strong { display: block; margin: 2px 0 5px; color: var(--lime); font: 500 21px var(--mono); }
+.intro-progress-footer p:not(.eyebrow) { max-width: 510px; margin: 0; font-size: 12px; }
+.intro-progress-footer .button { position: relative; z-index: 1; flex: 0 0 auto; }
+.intro-progress-hint { position: relative; z-index: 1; flex: 0 0 auto; padding: 7px 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; font: 10px var(--mono); }
+.question-card.completed { border-color: #42583a; }
 .lab-board .go-board { width: calc(100% - 18px); }
 .lab-board .board-coordinates.top { width: calc(100% - 18px); max-width: 625px; }
 @media (max-width: 980px) { .topbar { gap: 14px; }.nav-link { padding: 0 7px; font-size: 11px; }.nav-link b { display:none; }.profile-pill > span { display:none; }.welcome-board-card { opacity:.55; }.lesson-shell { grid-template-columns: 215px minmax(0,1fr); }.lesson-sidebar { padding: 26px 13px; }.lesson-side-footer { right:13px; left:13px; }.lab-layout { grid-template-columns: 1fr; }.rule-checklist { display:grid; grid-template-columns: repeat(3,1fr); gap:0 16px; }.rule-checklist h2, .rule-checklist p, .rule-checklist hr { grid-column:1/-1; } }
@@ -222,4 +230,7 @@ h1, h2, h3, p { margin-top: 0; } h1 { font-size: clamp(32px, 4vw, 52px); letter-
   .topbar .nav-link b { display: block; color: var(--dim); font-size: 16px; }
   .topbar .nav-link:hover, .topbar .nav-link.active { color: var(--text); border-color: #607541; background: #222d21; }
   .topbar .nav-link.active b { color: var(--lime); }
+  .intro-progress-footer { align-items: stretch; flex-direction: column; padding: 21px; }
+  .intro-progress-footer .button { width: 100%; }
+  .intro-progress-hint { align-self: flex-start; }
 }
