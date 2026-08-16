@@ -17,10 +17,11 @@ function skillAccuracy(state, skillId) {
   return record.attempts ? Math.round(record.correct / record.attempts * 100) : 0;
 }
 
-/** Update mastery from a real question. Repeated positions gain much less. */
-function applyPracticeResult(state, question, correct) {
+/** Update mastery from a real question. Guided lesson questions are worth 10%. */
+function applyPracticeResult(state, question, correct, options = {}) {
   const record = masteryRecord(state, question.skill);
   const oldScore = record.masteryScore;
+  const lessonMode = options.mode === "lesson";
   record.attempts += 1; record.lastPracticed = new Date().toISOString();
   const repeated = record.recentSignatures.includes(question.signature);
   if (correct) {
@@ -30,13 +31,13 @@ function applyPracticeResult(state, question, correct) {
     // The same template/position cannot be used to grind a Skill to 100.
     // A position already seen in the recent window earns no mastery, so users
     // cannot fill a Skill by immediately repeating the same question.
-    const gain = repeated ? 0 : base + streakBonus;
+    const gain = lessonMode ? 10 : repeated ? 0 : base + streakBonus;
     record.masteryScore = Math.min(100, record.masteryScore + gain);
+    record.recentSignatures = [...record.recentSignatures, question.signature].slice(-12);
   } else {
     record.wrongCount += 1; record.correctStreak = 0;
-    record.masteryScore = Math.max(0, record.masteryScore - 1);
+    if (!lessonMode) record.masteryScore = Math.max(0, record.masteryScore - 1);
   }
-  record.recentSignatures = [...record.recentSignatures, question.signature].slice(-12);
   return { before: oldScore, after: record.masteryScore, delta: record.masteryScore - oldScore, label: masteryLabel(record.masteryScore) };
 }
 

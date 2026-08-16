@@ -80,7 +80,7 @@ function groupQuestion(difficulty) {
 }
 function atariQuestion(skill, difficulty) {
   const position = atariPosition("b");
-  return base({ skill, difficulty, type:"click", prompt:"这颗黑棋正在被打吃（只剩 1 口气）。请点击它最后一口气。", answer:keyOf(...position.answer), explanation:"对，黑棋只剩这个空点。对方下一步占住它就能提子。", board:{size:position.size, stones:boardStones(position.board), highlights:[position.target]}, signature:`atari-${keyOf(...position.answer)}` });
+  return base({ skill, difficulty, type:"click", toPlay:"w", prompt:"这颗黑棋正在被打吃（只剩 1 口气）。请点击它最后一口气。", answer:keyOf(...position.answer), explanation:"对，白棋占住最后一口气，黑棋会被提走。", board:{size:position.size, stones:boardStones(position.board), highlights:[position.target]}, signature:`atari-${boardStones(position.board).map(stone=>stone.join("")).join("-")}-${keyOf(...position.answer)}` });
 }
 function captureQuestion(skill, difficulty) {
   const position = skill === "whole-capture" ? groupAtariPosition("b") : atariPosition("b");
@@ -89,7 +89,7 @@ function captureQuestion(skill, difficulty) {
 }
 function escapeQuestion(difficulty) {
   const position = atariPosition("b");
-  return base({ skill:"escape", difficulty, type:"click", toPlay:"b", prompt:"轮到黑棋。请点击可以延伸、增加气的位置。", answer:keyOf(...position.answer), explanation:"延伸到最后一口气后，黑棋不再是只有一气的单子。", board:{size:position.size, stones:boardStones(position.board), highlights:[position.target]}, signature:`escape-${keyOf(...position.answer)}` });
+  return base({ skill:"escape", difficulty, type:"click", toPlay:"b", prompt:"轮到黑棋。请点击可以延伸、增加气的位置。", answer:keyOf(...position.answer), explanation:"延伸到最后一口气后，黑棋不再是只有一气的单子。", board:{size:position.size, stones:boardStones(position.board), highlights:[position.target]}, signature:`escape-${boardStones(position.board).map(stone=>stone.join("")).join("-")}-${keyOf(...position.answer)}` });
 }
 function suicideQuestion(difficulty) {
   const size = 5, [x,y] = randomAnchor();

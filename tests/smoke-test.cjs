@@ -51,6 +51,7 @@ function testBoardGeometry() {
   check(css.includes("calc(100% / (var(--size) - 1))"), "clipped grid needs exactly N-1 spaces between N lines");
   check(css.includes(".stone.b") && css.includes(".stone.w"), "both stone materials must have dedicated rendering");
   check(css.includes(".stone::before") && css.includes("filter: blur(.7px)"), "stones need a soft specular highlight instead of a flat fill");
+  check(css.includes("stone-capture") && css.includes(".being-captured"), "captured stones need a visible removal animation");
 
   // Reproduce the final CSS sizing formula over phone, tablet and desktop widths.
   for (const lab of [false, true]) {
@@ -78,6 +79,7 @@ function testBoardGeometry() {
   const boardSource = source("board.js");
   check(boardSource.includes("ABCDEFGHJKLMNOPQRST"), "Go coordinates must skip I");
   check(boardSource.includes("size: this.size"), "board reset must retain board size");
+  check(boardSource.includes("animateMove") && boardSource.includes("result.captured"), "practice board needs a staged move-and-capture animation");
   const context = vm.createContext({ console });
   run(source("rules.js"), context);
   run(boardSource, context);
@@ -181,6 +183,9 @@ function testRandomQuestions() {
             const group = getGroup(board, ...q.board.highlights[0]);
             const liberties = getLiberties(board, group);
             if (liberties.length !== 1 || q.answer !== keyOf(...liberties[0])) fail("invalid atari answer", q);
+            const [x,y] = q.answer.split(",").map(Number);
+            const move = playMove(board, x, y, q.toPlay || "w");
+            if (!move.legal || move.captured.length !== 1) fail("atari click must demonstrate the capture", q);
           } else if (["capture","hunt","whole-capture"].includes(skill)) {
             const [x,y] = q.answer.split(",").map(Number);
             const move = playMove(board, x, y, q.toPlay || "w");
@@ -216,6 +221,10 @@ function testMasteryAndUnlocks() {
     const repeat = applyPracticeResult(state, q("shape-a"), true);
     const third = applyPracticeResult(state, q("shape-b"), true);
     const wrong = applyPracticeResult(state, q("shape-c"), false);
+    const lessonState = defaultState();
+    const lessonCorrect = applyPracticeResult(lessonState, q("guided-a"), true, {mode:"lesson"});
+    const lessonRepeat = applyPracticeResult(lessonState, q("guided-a"), true, {mode:"lesson"});
+    const lessonWrong = applyPracticeResult(lessonState, q("guided-b"), false, {mode:"lesson"});
     const level1Before = levelUnlocked(state, 1);
     masteryRecord(state, "intro").masteryScore = 40;
     const level1After = levelUnlocked(state, 1);
@@ -226,7 +235,9 @@ function testMasteryAndUnlocks() {
     const level2After = levelUnlocked(state, 2);
     return {
       firstDelta:first.delta, repeatDelta:repeat.delta, thirdDelta:third.delta,
-      wrongDelta:wrong.delta, score:masteryRecord(state,"intro").masteryScore,
+      wrongDelta:wrong.delta, lessonDelta:lessonCorrect.delta,
+      lessonRepeatDelta:lessonRepeat.delta, lessonWrongDelta:lessonWrong.delta,
+      score:masteryRecord(state,"intro").masteryScore,
       level1Before, level1After, level2Before, level2After
     };
   })())`, context));
@@ -235,6 +246,8 @@ function testMasteryAndUnlocks() {
   check(result.repeatDelta === 0, "repeating a recent shape must not grind mastery");
   check(result.thirdDelta === 3, "three-correct streak should add its bonus on a new shape");
   check(result.wrongDelta === -1, "wrong answers should reduce mastery by one");
+  check(result.lessonDelta === 10 && result.lessonRepeatDelta === 10, "each correct guided lesson question should gain 10 mastery");
+  check(result.lessonWrongDelta === 0, "guided lesson mistakes should not reduce mastery");
   check(!result.level1Before && result.level1After, "Level 1 should unlock at 40 intro mastery");
   check(!result.level2Before && result.level2After, "Level 2 should require every Level 1 skill at 40");
 }
@@ -330,25 +343,42 @@ function testApplicationFlowAndPersistence() {
   check(run('masteryRecord(state,"intro").masteryScore', first.context) >= 40, "finishing Level 0 must unlock Level 1");
   check(first.app.innerHTML.includes("LEVEL 1 · AVAILABLE"), "Liberty lesson must be available after Level 0 completion");
 
-  click(first, { action:"start-session", count:"10" });
-  const answer = run("currentQuestion.answer", first.context);
-  const answeredQuestionId = run("currentQuestion.id", first.context);
-  click(first, { action:"practice-answer", answer });
-  check(first.feedback.innerHTML.includes('data-action="next-question"'), "answered practice question must provide a next-question button");
-  check(run("currentQuestionResolved", first.context) === true, "correct practice answer must resolve the current question once");
+  check(first.app.innerHTML.includes('data-action="start-lesson-session"'), "skill lesson must start a ten-question checkpoint");
+  click(first, { action:"start-lesson-session", skill:"liberty" });
+  check(run("state.activeSession.type", first.context) === "lesson", "lesson CTA must start guided lesson mode");
+  check(run("state.activeSession.count", first.context) === 10, "guided lesson must contain exactly ten questions");
+  check(first.app.innerHTML.includes("10 题练习"), "guided practice heading must explain the ten-question flow");
+  for (let index = 0; index < 10; index += 1) {
+    const answeredQuestionId = run("currentQuestion.id", first.context);
+    run("grade(currentQuestion,currentQuestion.answer)", first.context);
+    check(run("currentQuestionResolved", first.context) === true, `guided question ${index + 1} must resolve after a correct answer`);
+    check(run("state.activeSession.completed", first.context) === index + 1, `guided question ${index + 1} must advance progress once`);
+    if (index === 0) {
+      run("grade(currentQuestion,currentQuestion.answer)", first.context);
+      check(run("state.activeSession.completed", first.context) === 1, "double-clicking a solved question must not advance progress twice");
+    }
+    if (index < 9) {
+      click(first, { action:"next-question" });
+      check(run("currentQuestion.id", first.context) !== answeredQuestionId, "next-question button must generate a different question instance");
+      check(run("currentQuestionResolved", first.context) === false, "new question must reset its resolved state");
+    }
+  }
+  check(first.feedback.innerHTML.includes("完成并查看结果"), "the tenth question must provide a visible completion action");
+  check(run('masteryRecord(state,"liberty").masteryScore', first.context) === 100, "ten correct guided questions should reach 100 mastery");
   click(first, { action:"next-question" });
-  check(run("currentQuestion.id", first.context) !== answeredQuestionId, "next-question button must generate a different question instance");
-  check(run("currentQuestionResolved", first.context) === false, "new question must reset its resolved state");
-  click(first, { action:"end-session" });
-  check(first.app.innerHTML.includes("LATEST TRAINING SESSION"), "training session must produce a report");
+  check(first.app.innerHTML.includes("SKILL PRACTICE COMPLETE"), "completed guided lesson must show a result card");
+  check(first.app.innerHTML.includes("继续练习 10 题"), "result card must let the learner continue practicing");
+  check(first.app.innerHTML.includes("下一知识点"), "result card must offer the next learning skill");
+  check(run("state.lessonProgress.liberty.practiceCompleted", first.context) === true, "guided lesson completion must be saved");
   check(storage.has("go-progress-trainer-v2"), "progress must be written to localStorage");
 
   const second = fakeBrowser(storage);
   check(second.app.innerHTML.includes("围棋会一直陪你进步"), "refresh must resume at dashboard");
   check(run("state.profile.hasStarted", second.context) === true, "started state must survive refresh");
-  check(run("totalQuestions(state)", second.context) === 1, "question history must survive refresh");
+  check(run("totalQuestions(state)", second.context) === 10, "question history must survive refresh");
   check(run("state.trainingSessions.length", second.context) === 1, "session report must survive refresh");
   check(run("state.lessonProgress.intro.completed", second.context) === true, "Level 0 completion must survive refresh");
+  check(run("state.lessonProgress.liberty.practiceCompleted", second.context) === true, "guided skill completion must survive refresh");
 }
 
 function main() {

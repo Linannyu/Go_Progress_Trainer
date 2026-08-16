@@ -34,6 +34,23 @@ class GoBoard {
     }
   }
   handleClick(x, y) { if (this.locked) return; const result = playMove(this.board, x, y, this.toPlay, this.previousBoard); if (!result.legal) return this.onMove({ legal: false, x, y }); this.history.push({ board: cloneBoard(this.board), previousBoard: this.previousBoard && cloneBoard(this.previousBoard), toPlay: this.toPlay, lastMove: this.lastMove }); this.previousBoard = cloneBoard(this.board); this.board = result.board; this.lastMove = [x, y]; this.toPlay = otherColor(this.toPlay); this.future = []; this.draw(); this.onMove({ legal: true, x, y, captured: result.captured, board: this.board }); }
+  animateMove(x, y, color = this.toPlay, delay = 430) {
+    const result = playMove(this.board, x, y, color, this.previousBoard);
+    if (!result.legal) return result;
+    const staged = cloneBoard(this.board);
+    staged[y][x] = color;
+    this.board = staged;
+    this.lastMove = [x, y];
+    this.draw();
+    result.captured.forEach(([cx, cy]) => this.container.querySelector(`[data-coordinate="${keyOf(cx, cy)}"]`)?.classList.add("being-captured"));
+    setTimeout(() => {
+      this.board = result.board;
+      this.draw();
+      this.container.classList.add("capture-complete");
+      setTimeout(() => this.container.classList.remove("capture-complete"), 420);
+    }, result.captured.length ? delay : 180);
+    return result;
+  }
   undo() { const old = this.history.pop(); if (!old) return; this.future.push({ board: cloneBoard(this.board), previousBoard: this.previousBoard && cloneBoard(this.previousBoard), toPlay: this.toPlay, lastMove: this.lastMove }); Object.assign(this, old); this.draw(); }
   redo() { const next = this.future.pop(); if (!next) return; this.history.push({ board: cloneBoard(this.board), previousBoard: this.previousBoard && cloneBoard(this.previousBoard), toPlay: this.toPlay, lastMove: this.lastMove }); Object.assign(this, next); this.draw(); }
   clear() { this.setPosition({ size: this.size, toPlay: "b", onMove: this.onMove }); }
